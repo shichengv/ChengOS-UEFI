@@ -308,7 +308,7 @@ UefiMain(
   EFI_FILE_INFO *fiKrnl;
   UINTN KrnlBufferSize = 0;
   EFI_PHYSICAL_ADDRESS KrnlImageBase = 0x1000000;
-  UINTN KrnlImageSizeWithPFNDatabaseSize = 0;
+  UINTN SumOfKrnlImageSizeAndPfnDatabaseSize = 0;
 
   UINTN MemMapSize = 0;
   EFI_MEMORY_DESCRIPTOR *MemMap = 0;
@@ -334,7 +334,7 @@ UefiMain(
     goto ExitUefi;
   }
   
-  KrnlImageSizeWithPFNDatabaseSize = ((fiKrnl->FileSize + 0x1000 - 1) & (~0xfff)) + 
+  SumOfKrnlImageSizeAndPfnDatabaseSize = ((fiKrnl->FileSize + 0x1000 - 1) & (~0xfff)) + 
     ((MachineInfo->HardwareInformation.RamSize + 0x1000 - 1) & (~0xfff)) / EFI_PAGE_SIZE * PFN_ITEM_SIZE;
 
   /* ========================= Find Acpi Configuration ====================== */
@@ -358,7 +358,7 @@ UefiMain(
 
   // Read krnl image at address 0x1000000
   KrnlProtocol->GetInfo(KrnlProtocol, &gEfiFileInfoGuid, &KrnlBufferSize, fiKrnl);
-  gBS->AllocatePages(AllocateAddress, EfiConventionalMemory, KrnlImageSizeWithPFNDatabaseSize, &KrnlImageBase);
+  gBS->AllocatePages(AllocateAddress, EfiConventionalMemory, SumOfKrnlImageSizeAndPfnDatabaseSize, &KrnlImageBase);
   KrnlBufferSize = fiKrnl->FileSize;
   KrnlProtocol->Read(KrnlProtocol, &KrnlBufferSize, (VOID *)KrnlImageBase);
 
@@ -369,7 +369,7 @@ UefiMain(
   CcldrProtocol->Read(CcldrProtocol, &CcldrBufferSize, (VOID *)CcldrImageBase);
 
   MachineInfo->ImageInformation.KernelImageStartAddress = KrnlImageBase;
-  MachineInfo->ImageInformation.AllocatedMemory = KrnlImageSizeWithPFNDatabaseSize;
+  MachineInfo->ImageInformation.AllocatedMemory = SumOfKrnlImageSizeAndPfnDatabaseSize;
   MachineInfo->ImageInformation.KernelImageSize = KrnlBufferSize;
 
   // Free Memory and Close Protocol
