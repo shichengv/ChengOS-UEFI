@@ -115,7 +115,7 @@ GetEfiMemMap(
       &DescriptorSize,
       &DescriptorVersion);
 
-  MemoryMap = MachineInfo->HardwareInformation.EfiMemoryDesc;
+  MemoryMap = MachineInfo->MemoryInformation.EfiMemoryDesc;
 
   Status = gBS->GetMemoryMap(
       &MemoryMapSize,
@@ -137,7 +137,7 @@ GetEfiMemMap(
       Descriptor->NumberOfPages,
       Descriptor->Attribute);
   }
-  MachineInfo->HardwareInformation.EfiMemDescCount = Index;
+  MachineInfo->MemoryInformation.EfiMemDescCount = Index;
 
   // Calculate total RAM size and find the highest physical address
   for(UINTN i = 0; i < MemoryMapSize / DescriptorSize; i++)
@@ -155,12 +155,12 @@ GetEfiMemMap(
     }
   }
 
-  MachineInfo->HardwareInformation.RamSize = PageCount * EFI_PAGE_SIZE;
+  MachineInfo->MemoryInformation.RamSize = PageCount * EFI_PAGE_SIZE;
   // Subtract page size to get the last addressable byte
-  MachineInfo->HardwareInformation.HighestPhysicalAddress = HighestAddress - EFI_PAGE_SIZE;
+  MachineInfo->MemoryInformation.HighestPhysicalAddress = HighestAddress - EFI_PAGE_SIZE;
   Print(L"Total RAM: %ld Bytes\nHighest Physical Address: %-16lx\n", 
-    MachineInfo->HardwareInformation.RamSize,
-    MachineInfo->HardwareInformation.HighestPhysicalAddress);
+    MachineInfo->MemoryInformation.RamSize,
+    MachineInfo->MemoryInformation.HighestPhysicalAddress);
 
 
   return EFI_SUCCESS;
@@ -333,9 +333,12 @@ UefiMain(
   {
     goto ExitUefi;
   }
-  
-  SumOfKrnlImageSizeAndPfnDatabaseSize = ((fiKrnl->FileSize + 0x1000 - 1) & (~0xfff)) + 
-    ((MachineInfo->HardwareInformation.RamSize + 0x1000 - 1) & (~0xfff)) / EFI_PAGE_SIZE * PFN_ITEM_SIZE;
+  MachineInfo->ImageInformation.KernelImageStartVirtualAddress = KRNL_IMAGE_VIRTUAL_ADDRESS_START;
+
+  // Calculate memory size that pfn database needed
+  MachineInfo->MemoryInformation.PfnDatabaseSize = 
+    ((MachineInfo->MemoryInformation.RamSize + 0x1000 - 1) & (~0xfff)) / EFI_PAGE_SIZE * PFN_ITEM_SIZE;
+
 
   /* ========================= Find Acpi Configuration ====================== */
   /*!!! Warning:  No Error Check  */
@@ -358,6 +361,16 @@ UefiMain(
 
   // Read krnl image at address 0x1000000
   KrnlProtocol->GetInfo(KrnlProtocol, &gEfiFileInfoGuid, &KrnlBufferSize, fiKrnl);
+
+  // PFN database Start address = kernel image start address + kernel image size (page aligned)
+  MachineInfo->MemoryInformation.PfnDatabaseStartAddress = 
+    MachineInfo->ImageInformation.KernelImageStartVirtualAddress + ((fiKrnl->FileSize + 0x1000 - 1) & (~0xfff));
+
+  // Calculate the memory size for krnl_image and pfndatabase
+  SumOfKrnlImageSizeAndPfnDatabaseSize = MachineInfo->MemoryInformation.PfnDatabaseStartAddress - 
+    MachineInfo->ImageInformation.KernelImageStartVirtualAddress + 
+    MachineInfo->MemoryInformation.PfnDatabaseSize;
+
   gBS->AllocatePages(AllocateAddress, EfiConventionalMemory, SumOfKrnlImageSizeAndPfnDatabaseSize, &KrnlImageBase);
   KrnlBufferSize = fiKrnl->FileSize;
   KrnlProtocol->Read(KrnlProtocol, &KrnlBufferSize, (VOID *)KrnlImageBase);
@@ -368,7 +381,8 @@ UefiMain(
   CcldrBufferSize = fiCcldr->FileSize;
   CcldrProtocol->Read(CcldrProtocol, &CcldrBufferSize, (VOID *)CcldrImageBase);
 
-  MachineInfo->ImageInformation.KernelImageStartAddress = KrnlImageBase;
+  // fill MachineInfo
+  MachineInfo->ImageInformation.KernelImageStartPhysicalAddress = KrnlImageBase;
   MachineInfo->ImageInformation.AllocatedMemory = SumOfKrnlImageSizeAndPfnDatabaseSize;
   MachineInfo->ImageInformation.KernelImageSize = KrnlBufferSize;
 

@@ -17,6 +17,9 @@
 #define DEFAULT_HORIZONTAL_RESOLUTION             1280
 #define DEFAULT_VERTICAL_RESOLUTION               720
 
+#define KRNL_SPACE_VIRTUAL_ADDRESS_START      0x80000000000
+#define KRNL_IMAGE_VIRTUAL_ADDRESS_START      0x80000010000
+
 struct RSDP_t
 {
     CHAR8 Signature[8];
@@ -65,19 +68,22 @@ typedef struct _ACPI_INFORMATION
 } ACPI_INFORMATION;
 
 
-typedef struct _HARDWARE_INFORMATION 
+typedef struct _MEMORY_INFORMATION 
 {
     UINTN RamSize;
     UINTN HighestPhysicalAddress;
+    UINTN PfnDatabaseStartAddress;
+    UINTN PfnDatabaseSize;
     UINTN EfiMemDescCount;
     EFI_MEMORY_DESCRIPTOR EfiMemoryDesc[];
 
-} HARDWARE_INFORMATION;
+} MEMORY_INFORMATION;
 
 typedef struct _IMAGE_INFORMATION
 {
-    UINTN KernelImageStartAddress;
+    UINTN KernelImageStartPhysicalAddress;
     UINTN AllocatedMemory;  // KernelImageSize + PFN database size;
+    UINTN KernelImageStartVirtualAddress;
     UINTN KernelImageSize;
 
 } IMAGE_INFORMATION;
@@ -87,6 +93,6 @@ typedef struct _MACHINE_INFORMATION
     IMAGE_INFORMATION ImageInformation;
     MACHINE_GRAPHICS_OUTPUT_INFORMATION GraphicsOutputInformation;
     ACPI_INFORMATION AcpiInformation;
-    HARDWARE_INFORMATION HardwareInformation;
+    MEMORY_INFORMATION MemoryInformation;
 
 } MACHINE_INFORMATION;
