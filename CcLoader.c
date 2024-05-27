@@ -294,21 +294,21 @@ UefiMain(
   EFI_STATUS Status;
 
   // Allocate Memory for Machine Information Structure
-  EFI_PHYSICAL_ADDRESS MachineInformationAddress = 0x1000;
+  EFI_PHYSICAL_ADDRESS MachineInformationAddress = MACHINE_INFO_STRUCT_ADDR;
   MACHINE_INFORMATION *MachineInfo = (MACHINE_INFORMATION *)MachineInformationAddress;
 
   EFI_FILE_PROTOCOL *RootProtocol;
 
-  EFI_FILE_PROTOCOL *CcldrProtocol;
-  EFI_FILE_INFO *fiCcldr;
-  UINTN CcldrBufferSize = 0;
-  EFI_PHYSICAL_ADDRESS CcldrImageBase = 0x8000;
-
   EFI_FILE_PROTOCOL *KrnlProtocol;
   EFI_FILE_INFO *fiKrnl;
   UINTN KrnlBufferSize = 0;
-  EFI_PHYSICAL_ADDRESS KrnlImageBase = 0x1000000;
-  UINTN SumOfKrnlImageSizeAndPfnDatabaseSize = 0;
+  EFI_PHYSICAL_ADDRESS KrnlImageBase = KRNL_BASE_ADDR;
+  UINTN KernelSpaceSize = 0;
+
+  EFI_FILE_PROTOCOL *CcldrProtocol;
+  EFI_FILE_INFO *fiCcldr;
+  UINTN CcldrBufferSize = 0;  // The size of ccldr must not exceed 1GByte.
+  EFI_PHYSICAL_ADDRESS CcldrBase = CCLDR_BASE_ADDR;
 
   UINTN MemMapSize = 0;
   EFI_MEMORY_DESCRIPTOR *MemMap = 0;
@@ -316,12 +316,24 @@ UefiMain(
   UINTN DescriptorSize = 0;
   UINT32 DesVersion = 0;
 
-  gBS->AllocatePages(AllocateAddress, EfiConventionalMemory, 7, &MachineInformationAddress);
-  gBS->SetMem((VOID *)MachineInfo, (0x7 << 12), 0);
-
   gSystemTable = SystemTable;
   SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
 
+  Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, (MACHINE_INFO_STRUCT_SIZE / EFI_PAGE_SIZE), &MachineInformationAddress);
+  if(EFI_ERROR(Status))
+  {
+    Print(L"Allocate 7 pages memory for MachineInfo Structure at 0x1000\n\r");
+    Print(L"UefiMain() -> AllocatePages() failed with error code: %d \n\r", Status);
+    goto ExitUefi;
+  }
+  Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, (CCLDR_SIZE / EFI_PAGE_SIZE), &CcldrBase);
+  if(EFI_ERROR(Status))
+  {
+    Print(L"Allocate 7 MBytes memory for Ccldr at 0x100000\n\r");
+    Print(L"UefiMain() -> AllocatePages() failed with error code: %d \n\r", Status);
+    goto ExitUefi;
+  }
+  gBS->SetMem((VOID *)MachineInfo, MACHINE_INFO_STRUCT_SIZE, 0);
 
   /* ========================= Adjust the Graphics mode ====================== */
   /*!!! Warning:  No Error Check  */
@@ -333,12 +345,6 @@ UefiMain(
   {
     goto ExitUefi;
   }
-  MachineInfo->ImageInformation.KernelImageStartVirtualAddress = KRNL_IMAGE_VIRTUAL_ADDRESS_START;
-
-  // Calculate memory size that pfn database needed
-  MachineInfo->MemoryInformation.PfnDatabaseSize = 
-    ((MachineInfo->MemoryInformation.RamSize + 0x1000 - 1) & (~0xfff)) / EFI_PAGE_SIZE * PFN_ITEM_SIZE;
-
 
   /* ========================= Find Acpi Configuration ====================== */
   /*!!! Warning:  No Error Check  */
@@ -356,35 +362,57 @@ UefiMain(
   CcldrBufferSize = sizeof(EFI_FILE_INFO) + sizeof(UINT16) * 0x100;
 
   // Allocate Memory for File Info
-  gBS->AllocatePool(EfiRuntimeServicesData, KrnlBufferSize, (VOID **)&fiKrnl);
-  gBS->AllocatePool(EfiRuntimeServicesData, CcldrBufferSize, (VOID **)&fiCcldr);
+  Status = gBS->AllocatePool(EfiRuntimeServicesData, KrnlBufferSize, (VOID **)&fiKrnl);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"Allocate memory for Kernel File Info.\n\r");
+    Print(L"UefiMain() -> AllocatePool() failed with error code: %d\n\r", Status);
+    goto ExitUefi;
+  }
+  Status = gBS->AllocatePool(EfiRuntimeServicesData, CcldrBufferSize, (VOID **)&fiCcldr);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"Allocate memory for Ccldr File Info.\n\r");
+    Print(L"UefiMain() -> AllocatePool() failed with error code: %d\n\r", Status);
+    goto ExitUefi;
+  }
+  
+
+  /*  Allocate Kernel Space Address. */
 
   // Read krnl image at address 0x1000000
   KrnlProtocol->GetInfo(KrnlProtocol, &gEfiFileInfoGuid, &KrnlBufferSize, fiKrnl);
+  // Calculate the memory size for Kernel Space Note that the RamSize is 1GByte aligned.
+  // Kernel Space Size = RamSize was aligned / 4;
+  KernelSpaceSize = (((MachineInfo->MemoryInformation.RamSize + 0x40000000 -1) & (~0x3fffffff)) >> 2);
 
-  // PFN database Start address = kernel image start address + kernel image size (page aligned)
-  MachineInfo->MemoryInformation.PfnDatabaseStartAddress = 
-    MachineInfo->ImageInformation.KernelImageStartVirtualAddress + ((fiKrnl->FileSize + 0x1000 - 1) & (~0xfff));
-
-  // Calculate the memory size for krnl_image and pfndatabase
-  SumOfKrnlImageSizeAndPfnDatabaseSize = MachineInfo->MemoryInformation.PfnDatabaseStartAddress - 
-    MachineInfo->ImageInformation.KernelImageStartVirtualAddress + 
-    MachineInfo->MemoryInformation.PfnDatabaseSize;
-
-  gBS->AllocatePages(AllocateAddress, EfiConventionalMemory, SumOfKrnlImageSizeAndPfnDatabaseSize, &KrnlImageBase);
+  Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, (KernelSpaceSize / EFI_PAGE_SIZE), &KrnlImageBase);
+  if(EFI_ERROR(Status))
+  {
+    Print(L"Allocate Kernel Space Address at 0x8000000.\n\r");
+    Print(L"UefiMain() -> AllocatePages() failed with error code: %d \n\r", Status);
+    goto ExitUefi;
+  }
   KrnlBufferSize = fiKrnl->FileSize;
   KrnlProtocol->Read(KrnlProtocol, &KrnlBufferSize, (VOID *)KrnlImageBase);
 
   // Read ccldr image at address 0x8000
   CcldrProtocol->GetInfo(CcldrProtocol, &gEfiFileInfoGuid, &CcldrBufferSize, fiCcldr);
-  gBS->AllocatePages(AllocateAddress, EfiConventionalMemory, (fiCcldr->FileSize + 0x1000 - 1) & (~0xfff), &CcldrImageBase);
-  CcldrBufferSize = fiCcldr->FileSize;
-  CcldrProtocol->Read(CcldrProtocol, &CcldrBufferSize, (VOID *)CcldrImageBase);
+  CcldrBufferSize = fiCcldr->FileSize;  
+  CcldrProtocol->Read(CcldrProtocol, &CcldrBufferSize, (VOID *)CcldrBase);
 
   // fill MachineInfo
-  MachineInfo->ImageInformation.KernelImageStartPhysicalAddress = KrnlImageBase;
-  MachineInfo->ImageInformation.AllocatedMemory = SumOfKrnlImageSizeAndPfnDatabaseSize;
-  MachineInfo->ImageInformation.KernelImageSize = KrnlBufferSize;
+  MachineInfo->ImageInformation[0].BaseAddress = KrnlImageBase;
+  MachineInfo->ImageInformation[0].Size = KernelSpaceSize;
+
+  MachineInfo->ImageInformation[1].BaseAddress = CcldrBase;
+  MachineInfo->ImageInformation[1].Size = CCLDR_SIZE;
+
+  MachineInfo->ImageInformation[2].BaseAddress = KrnlImageBase;
+  MachineInfo->ImageInformation[2].Size = KrnlBufferSize;
+
+  MachineInfo->BaseAddress = MACHINE_INFO_STRUCT_ADDR;
+  MachineInfo->Size = MACHINE_INFO_STRUCT_SIZE;
 
   // Free Memory and Close Protocol
   gBS->FreePool(fiKrnl);
@@ -400,13 +428,17 @@ UefiMain(
   gBS->GetMemoryMap(&MemMapSize, MemMap, &MapKey, &DescriptorSize, &DesVersion);
   gBS->ExitBootServices(ImageHandle, MapKey);
 
-  void (*ccldr_start)(MACHINE_INFORMATION *MachineInfo) = (void *)(0x300000);
+  void (*ccldr_start)(MACHINE_INFORMATION *MachineInfo) = (void *)(CcldrBase);
   ccldr_start(MachineInfo);
 
   return EFI_SUCCESS;
 
   // Exit with error
 ExitUefi:
+  while (1)
+  {
+    /* code */
+  }
   return Status;
 
 }

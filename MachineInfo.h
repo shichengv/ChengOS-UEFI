@@ -9,16 +9,17 @@
 #define NOTHING_WAS_FOUND               0x0
 #define ALL_HAVE_BEEN_FOUND             ( NOTHING_WAS_FOUND | APIC_TABLE_MASK )
 
+#define MACHINE_INFO_STRUCT_ADDR        0x1000
+#define MACHINE_INFO_STRUCT_SIZE        0xE000
 
-/*  PFNDatabaseSize = PFN_ITEM_SIZE * NumberOfPages   */
-#define PFN_ITEM_SIZE       0x20
+#define CCLDR_BASE_ADDR                 0x100000
+#define CCLDR_SIZE                      0x700000
 
+#define KRNL_BASE_ADDR                  0x8000000
 
 #define DEFAULT_HORIZONTAL_RESOLUTION             1280
 #define DEFAULT_VERTICAL_RESOLUTION               720
 
-#define KRNL_SPACE_VIRTUAL_ADDRESS_START      0x80000000000
-#define KRNL_IMAGE_VIRTUAL_ADDRESS_START      0x80000010000
 
 struct RSDP_t
 {
@@ -68,12 +69,10 @@ typedef struct _ACPI_INFORMATION
 } ACPI_INFORMATION;
 
 
-typedef struct _MEMORY_INFORMATION 
+typedef struct _MEMORY_INFORMATION
 {
     UINTN RamSize;
     UINTN HighestPhysicalAddress;
-    UINTN PfnDatabaseStartAddress;
-    UINTN PfnDatabaseSize;
     UINTN EfiMemDescCount;
     EFI_MEMORY_DESCRIPTOR EfiMemoryDesc[];
 
@@ -81,16 +80,20 @@ typedef struct _MEMORY_INFORMATION
 
 typedef struct _IMAGE_INFORMATION
 {
-    UINTN KernelImageStartPhysicalAddress;
-    UINTN AllocatedMemory;  // KernelImageSize + PFN database size;
-    UINTN KernelImageStartVirtualAddress;
-    UINTN KernelImageSize;
+    UINTN BaseAddress;
+    UINTN Size;
 
 } IMAGE_INFORMATION;
 
 typedef struct _MACHINE_INFORMATION
 {
-    IMAGE_INFORMATION ImageInformation;
+    UINTN BaseAddress;
+    UINTN Size;
+    /*  1st Kernel Space
+        2st Ccldr Image
+        3st Kernel Image    */
+    IMAGE_INFORMATION ImageInformation[3]; 
+
     MACHINE_GRAPHICS_OUTPUT_INFORMATION GraphicsOutputInformation;
     ACPI_INFORMATION AcpiInformation;
     MEMORY_INFORMATION MemoryInformation;
