@@ -143,16 +143,34 @@ GetEfiMemMap(
   for(UINTN i = 0; i < MemoryMapSize / DescriptorSize; i++)
   {
     Descriptor = (EFI_MEMORY_DESCRIPTOR*)((UINT8 *)MemoryMap + i * DescriptorSize);
-    if (Descriptor->Type == EfiConventionalMemory)
+    switch (Descriptor->Type)
     {
+    case EfiConventionalMemory:
       PageCount += Descriptor->NumberOfPages;
+      break;
+    case EfiLoaderCode:
+    case EfiLoaderData:
+    case EfiBootServicesCode:
+    case EfiBootServicesData:
+    case EfiRuntimeServicesCode:
+    case EfiRuntimeServicesData:
+    case EfiACPIReclaimMemory:
+    case EfiACPIMemoryNVS:
+    case EfiMemoryMappedIO:
+    case EfiMemoryMappedIOPortSpace:
+    case EfiPalCode:
+    case EfiPersistentMemory:
       EFI_PHYSICAL_ADDRESS EndAddress = Descriptor->PhysicalStart + Descriptor->NumberOfPages * EFI_PAGE_SIZE;
       if (EndAddress > HighestAddress)
       {
         HighestAddress = EndAddress;
       }
-      
+      break;
+    
+    default:
+      break;
     }
+
   }
 
   MachineInfo->MemoryInformation.RamSize = PageCount * EFI_PAGE_SIZE;
@@ -382,9 +400,9 @@ UefiMain(
 
   // Read krnl image at address 0x1000000
   KrnlProtocol->GetInfo(KrnlProtocol, &gEfiFileInfoGuid, &KrnlBufferSize, fiKrnl);
-  // Calculate the memory size for Kernel Space Note that the RamSize is 1GByte aligned.
+  // Calculate the memory size for Kernel Space Note that the RamSize is 512 MBytes aligned.
   // Kernel Space Size = RamSize was aligned / 4;
-  KernelSpaceSize = (((MachineInfo->MemoryInformation.RamSize + 0x40000000 -1) & (~0x3fffffff)) >> 2);
+  KernelSpaceSize = (((MachineInfo->MemoryInformation.RamSize + 0x20000000 -1) & (~0x1fffffff)) >> 2);
 
   Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, (KernelSpaceSize / EFI_PAGE_SIZE), &KrnlImageBase);
   if(EFI_ERROR(Status))
@@ -410,9 +428,6 @@ UefiMain(
 
   MachineInfo->ImageInformation[2].BaseAddress = KrnlImageBase;
   MachineInfo->ImageInformation[2].Size = KrnlBufferSize;
-
-  MachineInfo->BaseAddress = MACHINE_INFO_STRUCT_ADDR;
-  MachineInfo->Size = MACHINE_INFO_STRUCT_SIZE;
 
   // Free Memory and Close Protocol
   gBS->FreePool(fiKrnl);

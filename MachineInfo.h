@@ -78,21 +78,19 @@ typedef struct _MEMORY_INFORMATION
 
 } MEMORY_INFORMATION;
 
-typedef struct _IMAGE_INFORMATION
+typedef struct _TSL_IMAGE_INFORMATION
 {
     UINTN BaseAddress;
     UINTN Size;
 
-} IMAGE_INFORMATION;
+} TSL_IMAGE_INFORMATION;
 
 typedef struct _MACHINE_INFORMATION
 {
-    UINTN BaseAddress;
-    UINTN Size;
     /*  1st Kernel Space
         2st Ccldr Image
         3st Kernel Image    */
-    IMAGE_INFORMATION ImageInformation[3]; 
+    TSL_IMAGE_INFORMATION ImageInformation[3]; 
 
     MACHINE_GRAPHICS_OUTPUT_INFORMATION GraphicsOutputInformation;
     ACPI_INFORMATION AcpiInformation;

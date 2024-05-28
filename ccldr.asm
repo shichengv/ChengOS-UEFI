@@ -13,9 +13,7 @@ pdpt_krnl_space_base equ pdpt_ccldr_space_base + 0x1000
 pd_ccldr_space_base equ pdpt_krnl_space_base + 0x1000
 pt_ccldr_space_base equ pd_ccldr_space_base + 0x1000
 
-pd_krnl_space_base equ pt_ccldr_space_base + 0x4000
-
-; pt_krnl_space_base need to calculate, following pd_krnl_space_base
+; pt_krnl_space_base and pd_krnl_space_base are need to calculate, following pt_ccldr_space_base
 
 section .text
     global _start
@@ -38,12 +36,12 @@ _start:
     mov r8, rdi
 
     ; ccldr can map 2GBytes maximum physical memory;
-    mov rdi, qword [r8 + 0x18]
+    mov rdi, qword [r8 + 0x8]
     push rdi
     mov rsi, 0x80000000
     cmp rdi, rsi
     cmovnb rdi, rsi
-    mov qword [r8 + 0x18], rdi
+    mov qword [r8 + 0x8], rdi
 
 
     ; Set PML4
@@ -53,8 +51,8 @@ _start:
     mov rcx, 1
     call func_fill_pte
 
-    mov rdi, 0x1E0          ; PML4[0x1E0]
-    shl rdi, 3
+    mov rdi, 0x1E0          ; PML4[0x1E0 * 0x8]
+    shl rdi, 3              
     add rdi, pml4t_base
     mov rsi, pdpt_krnl_space_base
     mov rcx, 1
@@ -69,50 +67,48 @@ _start:
     mov rcx, 1
     call func_fill_pte
 
-    ; Set Kernel Space PDPT
-    ; Calculate the number of PDPTEs
-    ; 0x40000000 bytes eq 1 GBytes
-    xor rdx, rdx
-    mov rax, qword [r8 + 0x18] ; Get the size of the kernel space 
-    mov rsi, 0x40000000
-    div rsi
-    lea rcx, 1[rax]         ; rcx stores number of PDPTEs
-
-    mov rsi, rcx
-    shl rsi, 12
-    mov rdx, pd_krnl_space_base
-    add rdx, rsi            ; rdx stores pt_krnl_space_base
-    push rdx                ; backup pt_krnl_space_base
-
-    mov rdi, pdpt_krnl_space_base
-    mov rsi, pd_krnl_space_base
-    call func_fill_pte
-
-
     ; Set PD
 
     ; Set Ccldr PD
     ; Calculate the number of PDEs that ccldr needed
     ; 0x200000 bytes eq 2 MBytes
-    xor rdx, rdx
-    mov rax, qword [r8 + 0x28]  ; Get the size of the ccldr
-    mov rsi, 0x200000
-    div rsi
-    lea rcx, 1[rax]
+    mov rcx, qword [r8 + 0x18]  ; Get the size of the ccldr
+    shr rcx, 21 ; ccldr_size / 2 MBytes
+    add rcx, 1  ; the number of pds
+    mov rax, rcx
+    shl rax, 12 ; number of pds * 0x1000
+    add rax, pt_ccldr_space_base
+    push rax    ; backup pd_krnl_space_base
 
     mov rdi, pd_ccldr_space_base
     mov rsi, pt_ccldr_space_base
     call func_fill_pte
 
+    ; Set Kernel Space PDPT
+    ; Calculate the number of PDPTEs
+    ; 0x40000000 bytes eq 1 GByte
+    mov rcx, qword [r8 + 0x8] ; Get the size of the kernel space 
+    shr rcx, 30               ; kernel space size / 1 GByte
+    add rcx, 1                ; rcx stores number of PDPTEs
+
+    mov rbx, rcx
+    shl rbx, 12
+    pop rsi                 ; rsi stores pd_krnl_space_base
+    add rbx, rsi            ; backup pt_krnl_space_base
+    push rbx               
+    push rsi                ; backup pd_krnl_space_base
+
+    mov rdi, pdpt_krnl_space_base
+    call func_fill_pte
+
+
     ; Set Kernel Space PD
     ; Calculate the number of PDEs that kernel space needed
-    xor rdx, rdx
-    mov rax, qword [r8 + 0x18] ; Get the size of the kernel space 
-    mov rsi, 0x200000
-    div rsi
-    lea rcx, 1[rax]         ; rcx stores number of PDEs
+    mov rcx, qword [r8 + 0x8]   ; Get the size of the kernel space 
+    shr rcx, 21
+    add rcx, 1              ; rcx stores the number of PDEs
 
-    mov rdi, pd_krnl_space_base
+    pop rdi                 ; restore pd_krnl_space_base
     pop rsi                 ; restore pt_krnl_space_base
     push rsi                ; backup pt_krnl_space_base
     call func_fill_pte
@@ -121,9 +117,8 @@ _start:
     ; Set PT
 
     ; Set machine info pt
-    mov rcx, qword [r8 + 0x8]
-    shr rcx, 12
-    mov rsi, qword [r8]
+    mov rcx, 0xe    ; machine_info_size(0xE000) / 0x1000 = 0xe
+    mov rsi, r8     ; get machine info address
 
     mov rdi, rsi
     shr rdi, 9
@@ -132,9 +127,9 @@ _start:
 
     ; Set Ccldr PT
     ; Calculate the number of PTEs that ccldr needed
-    mov rcx, qword [r8 + 0x28]  
+    mov rcx, qword [r8 + 0x18]  
     shr rcx, 12
-    mov rsi, qword [r8 + 0x20]
+    mov rsi, qword [r8 + 0x10]
 
     mov rdi, rsi
     shr rdi, 9              ; ccldr_base_addr / page_size * sizeof(page table entry)
@@ -143,10 +138,10 @@ _start:
 
     ; Set Kernel Space PT
     ; Calculate the number of PTEs that kernel space needed
-    mov rcx, qword [r8 + 0x18]
+    mov rcx, qword [r8 + 0x8]
     shr rcx, 12
-    pop rdi
-    mov rsi, qword [r8 + 0x10]
+    pop rdi             ; restore pt_krnl_space_base
+    mov rsi, qword [r8]
     call func_fill_pte
 
     mov rcx, cr3
@@ -162,7 +157,7 @@ _start:
     wrmsr
 
     pop rdi
-    mov qword [r8 + 0x18], rdi
+    mov qword [r8 + 0x8], rdi
     mov rdi, r8
     
     mov rsi, kernel_space_virtual_base_addr + 0x1000
@@ -171,11 +166,14 @@ _start:
     hlt
 
 
-
-; Parameter:
-    ; rdi 1st parameter: pte address
-    ; rsi 2st parameter: pt_base
-    ; rcx 3st parameter: number of entrys
+; Routine Description: 
+;   Fill Page table entry
+; Parameters:
+;   rdi 1st parameter: pte address
+;   rsi 2st parameter: pt_base
+;   rcx 3st parameter: number of entrys
+; Returned Value:
+;   returned 0 
 func_fill_pte:
 
     fill_pte:
