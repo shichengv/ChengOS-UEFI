@@ -39,6 +39,7 @@
 [Ppis]
 
 [Protocols]
+  gEfiRngProtocolGuid
   gEfiGraphicsOutputProtocolGuid
   gEfiSimpleFileSystemProtocolGuid
   gEfiAcpiSdtProtocolGuid

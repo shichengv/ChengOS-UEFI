@@ -117,7 +117,7 @@ _start:
     ; Set PT
 
     ; Set machine info pt
-    mov rcx, 0xe    ; machine_info_size(0xE000) / 0x1000 = 0xe
+    mov rcx, 0xf    ; machine_info_size(0xF000) / 0x1000 = 0xF
     mov rsi, r8     ; get machine info address
 
     mov rdi, rsi
