@@ -10,14 +10,17 @@ $ tree
 ├── EFI
 │   └── BOOT
 │       └── BOOTX64.EFI
-├── icon
-│   ├── logo.icon
-│   └── tty.icon
-└── krnl
+├── font
+│   ├── font.bgra
+│   └── font.fnt
+└── icon
+    ├── loading.icon
+    └── logo.icon
 
-4 directories, 5 files
+5 directories, 6 files
 ```
 - `icon` 该文件夹存放了UEFI引导运行期间需要在屏幕上显示的加载信息
+- `font` 该文件夹存放了操作系统默认使用的字体
 - `BOOTX64.EFI` 负责收集硬件的信息，接着加载krnl和ccldr的镜像文件，并把控制权传给ccldr。
 - `ccldr` 负责根据UEFI阶段收集的内存信息来进行内核临时页表映射，初始化处理器，并把控制权移交给内核。
 - `krnl` 内核镜像

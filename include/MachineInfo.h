@@ -16,7 +16,18 @@
 #define DEFAULT_HORIZONTAL_RESOLUTION                       1920
 #define DEFAULT_VERTICAL_RESOLUTION                         1080
 
+#define MAX_FONT_NAME                                       0x18
+
 // #define _DEBUG                                              0x10100101
+
+typedef struct _FONT_DESCRIPTOR
+{
+    char FontName[MAX_FONT_NAME];
+    uint64_t FntAddr;
+    uint32_t FntSize;
+    uint64_t PngAddr;
+    uint32_t PngSize;
+}FONT_DESCRIPTOR;
 
 
 typedef struct _MACHINE_GRAPHICS_OUTPUT_INFORMATION
@@ -35,10 +46,9 @@ typedef struct _ACPI_TABLE
     VOID* DescriptorTablePtr;
 
     UINT32 Version;
-    UINT32 Reserved0;   // for memory aligned
+    UINT32 Reserved;   // for memory aligned
 
     UINT64 TableKey;
-    UINT64 Reserved1;
 
 } ACPI_TABLE;
 
@@ -58,6 +68,7 @@ typedef struct _ACPI_INFORMATION
         UINTN* Entry;
     } XSDT;
     struct _FADT *FADT;
+    struct _DSDT *DSDT;
     struct _ACPI_TABLE APIC;
 
 } ACPI_INFORMATION;
@@ -86,8 +97,9 @@ typedef struct _MACHINE_INFORMATION
     // second item: ccldr image space
     // third item: krnl image space
     TSL_MEMORY_SPACE_INFORMATION MemorySpaceInformation[3]; 
+    UINTN SizeofSumofImageFiles;
     UINTN RandomNumber;
-    UINTN Reserved;
+    FONT_DESCRIPTOR Font;
     // EFI_TIME CurrentTime;
     MACHINE_GRAPHICS_OUTPUT_INFORMATION GraphicsOutputInformation;
     ACPI_INFORMATION AcpiInformation;

@@ -158,4 +158,11 @@ struct _FADT
   struct _GenericAddressStructure X_GPE1Block;        // 64-bit address of the GPE1 Register Block
 };
 
+struct _DSDT{
+  struct _ACPISDTHeader Header; // Standard ACPI table header
+  // The rest of the table contains AML bytecode, which is not directly represented in C structures.
+  // The AML bytecode starts here and continues for the length specified in the header.
+  uint8_t AmlCode[1]; // Placeholder for the start of the AML bytecode
+};
+
 #endif

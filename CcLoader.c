@@ -119,8 +119,8 @@ STATIC struct _RSDP *ExamineEfiConfigurationTable()
 
 STATIC VOID 
 DisplayLogo(
-    IN EFI_GRAPHICS_OUTPUT_BLT_PIXEL* logo, 
-    IN EFI_GRAPHICS_OUTPUT_BLT_PIXEL* tty,
+    IN EFI_GRAPHICS_OUTPUT_BLT_PIXEL* Logo, 
+    IN EFI_GRAPHICS_OUTPUT_BLT_PIXEL* Loading,
     IN MACHINE_INFORMATION* MachineInfo)
 {
   EFI_STATUS Status;
@@ -131,17 +131,17 @@ DisplayLogo(
   UINTN XOfUpperLeftHandOfLogo;
   UINTN YOfUpperLeftHandOfLogo;
 
-  UINTN XOfUpperLeftHandOfTTY;
-  UINTN YOfUpperLeftHandOfTTY;
+  UINTN XOfUpperLeftHandOfLoading;
+  UINTN YOfUpperLeftHandOfLoading;
 
   XOfUpperLeftHandOfLogo = (Horizontal - LOGO_WIDTH) >> 1;
-  XOfUpperLeftHandOfTTY = (Horizontal - TTY_WIDTH) >> 1;
+  XOfUpperLeftHandOfLoading = (Horizontal - TTY_WIDTH) >> 1;
 
   YOfUpperLeftHandOfLogo = (Vertical >> 2);
-  YOfUpperLeftHandOfTTY = (Vertical >> 2) + (Vertical >> 1);
+  YOfUpperLeftHandOfLoading = (Vertical >> 2) + (Vertical >> 1);
 
 
-  Status = gGraphicsOutput->Blt(gGraphicsOutput, logo, EfiBltBufferToVideo, 0, 0,
+  Status = gGraphicsOutput->Blt(gGraphicsOutput, Logo, EfiBltBufferToVideo, 0, 0,
     XOfUpperLeftHandOfLogo, YOfUpperLeftHandOfLogo, LOGO_WIDTH, LOGO_HEIGHT, 0);
   if (EFI_ERROR(Status))
   {
@@ -160,11 +160,11 @@ DisplayLogo(
     return;
   }
    
-  Status = gGraphicsOutput->Blt(gGraphicsOutput, tty, EfiBltBufferToVideo, 0, 0,
-    XOfUpperLeftHandOfTTY, YOfUpperLeftHandOfTTY, TTY_WIDTH, TTY_HEIGHT, 0);
+  Status = gGraphicsOutput->Blt(gGraphicsOutput, Loading, EfiBltBufferToVideo, 0, 0,
+    XOfUpperLeftHandOfLoading, YOfUpperLeftHandOfLoading, TTY_WIDTH, TTY_HEIGHT, 0);
   if (EFI_ERROR(Status))
   {
-    Print(L"DisplayLogo() -> Blt(TTY) failed with error code: %d\n\r[Error]:", Status);
+    Print(L"DisplayLogo() -> Blt(Loading) failed with error code: %d\n\r[Error]:", Status);
     switch (Status)
     {
     case EFI_INVALID_PARAMETER:
@@ -306,6 +306,16 @@ FindAcpiTable(
   MachineInfo->AcpiInformation.XSDT.Entry = (UINTN*)((UINTN)MachineInfo->AcpiInformation.XSDT.Header + 36);
   MachineInfo->AcpiInformation.FADT = (struct _FADT*)(MachineInfo->AcpiInformation.XSDT.Entry[0]);
 
+  if (MachineInfo->AcpiInformation.FADT->h.Revision == 1)
+  {
+    MachineInfo->AcpiInformation.DSDT = (struct _DSDT*)((UINTN)MachineInfo->AcpiInformation.FADT->Dsdt);
+  }
+  // for higher acpi version than acpi version 1.0
+  else
+  {
+    MachineInfo->AcpiInformation.DSDT = (struct _DSDT*)MachineInfo->AcpiInformation.FADT->X_Dsdt;
+  }
+
 
   /*!!! Warning:  No Error Check  */
   gBS->LocateProtocol(&gEfiAcpiSdtProtocolGuid, NULL, (VOID**)&gAcpiSdt);
@@ -443,16 +453,25 @@ UefiMain(
   UINTN CcldrBufferSize = 0;  // The size of ccldr must not exceed 1GByte.
   EFI_PHYSICAL_ADDRESS CcldrBase = CCLDR_BASE_ADDR;
 
+  EFI_FILE_PROTOCOL *FntProtocol;
+  EFI_FILE_PROTOCOL *PngProtocol;
+  EFI_FILE_INFO *fiFnt;
+  EFI_FILE_INFO *fiPng;
+  UINTN FntBufferSize = 0;
+  UINTN PngBufferSize = 0;
+  EFI_PHYSICAL_ADDRESS FntBase;
+  EFI_PHYSICAL_ADDRESS PngBase;
+
 #ifndef _DEBUG
   EFI_FILE_PROTOCOL *LogoProtocol;
   EFI_FILE_INFO *fiLogo;
   UINTN LogoBufferSize = 0;
   EFI_PHYSICAL_ADDRESS LogoBase;
 
-  EFI_FILE_PROTOCOL *TTYProtocol;
-  EFI_FILE_INFO *fiTTY;
-  UINTN TTYBufferSize = 0;
-  EFI_PHYSICAL_ADDRESS TTYBase;
+  EFI_FILE_PROTOCOL *LoadingProtocol;
+  EFI_FILE_INFO *fiLoading;
+  UINTN LoadingBufferSize = 0;
+  EFI_PHYSICAL_ADDRESS LoadingBase;
 #endif
 
   UINTN MemMapSize = 0;
@@ -460,6 +479,10 @@ UefiMain(
   UINTN MapKey = 0;
   UINTN DescriptorSize = 0;
   UINT32 DesVersion = 0;
+
+  // Font Name Counter
+  CHAR8 *i;
+  INT32 j = 0;
 
   gSystemTable = SystemTable;
   SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
@@ -523,21 +546,59 @@ UefiMain(
   gBS->LocateProtocol(&gEfiSimpleFileSystemProtocolGuid, NULL, (VOID **)&gSimpleFileSystem);
 
   gSimpleFileSystem->OpenVolume(gSimpleFileSystem, &RootProtocol);
-  RootProtocol->Open(RootProtocol, &KrnlProtocol, L"krnl", EFI_FILE_MODE_READ, 0);
-  RootProtocol->Open(RootProtocol, &CcldrProtocol, L"ccldr", EFI_FILE_MODE_READ, 0);
+  Status = RootProtocol->Open(RootProtocol, &KrnlProtocol, L"krnl", EFI_FILE_MODE_READ, 0);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"krnl not found...\n\r");
+    goto ExitUefi;
+  }
+  
+  Status = RootProtocol->Open(RootProtocol, &CcldrProtocol, L"ccldr", EFI_FILE_MODE_READ, 0);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"ccldr not found...\n\r");
+    goto ExitUefi;
+  }
+
+  Status = RootProtocol->Open(RootProtocol, &FntProtocol, L"font\\font.fnt", EFI_FILE_MODE_READ, 0);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"font/font.fnt not found...\n\r");
+    goto ExitUefi;
+  }
+
+  Status = RootProtocol->Open(RootProtocol, &PngProtocol, L"font\\font.bgra", EFI_FILE_MODE_READ, 0);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"font/font.bgra not found...\n\r");
+    goto ExitUefi;
+  }
 
 #ifndef _DEBUG
-  RootProtocol->Open(RootProtocol, &LogoProtocol, L"icon\\logo.icon", EFI_FILE_MODE_READ, 0);
-  RootProtocol->Open(RootProtocol, &TTYProtocol, L"icon\\tty.icon", EFI_FILE_MODE_READ, 0);
+  Status = RootProtocol->Open(RootProtocol, &LogoProtocol, L"icon\\logo.icon", EFI_FILE_MODE_READ, 0);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"icon/logo.icon not found...\n\r");
+    goto ExitUefi;
+  }
+  Status = RootProtocol->Open(RootProtocol, &LoadingProtocol, L"icon\\loading.icon", EFI_FILE_MODE_READ, 0);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"icon/loading.icon not found...\n\r");
+    goto ExitUefi;
+  }
 #endif 
 
   // restricts the filename must be less than 255 characters;
   KrnlBufferSize = sizeof(EFI_FILE_INFO) + sizeof(UINT16) * 0x100;
   CcldrBufferSize = sizeof(EFI_FILE_INFO) + sizeof(UINT16) * 0x100;
 
+  FntBufferSize = sizeof(EFI_FILE_INFO) + sizeof(UINT16) * 0x100;
+  PngBufferSize = sizeof(EFI_FILE_INFO) + sizeof(UINT16) * 0x100;
+
 #ifndef _DEBUG
   LogoBufferSize = sizeof(EFI_FILE_INFO) + sizeof(UINT16) * 0x100;
-  TTYBufferSize = sizeof(EFI_FILE_INFO) + sizeof(UINT16) * 0x100;
+  LoadingBufferSize = sizeof(EFI_FILE_INFO) + sizeof(UINT16) * 0x100;
 #endif
 
   // Allocate Memory for File Info
@@ -556,6 +617,21 @@ UefiMain(
     goto ExitUefi;
   }
 
+  Status = gBS->AllocatePool(EfiRuntimeServicesData, FntBufferSize, (VOID **)&fiFnt);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"Allocate memory for font.fnt File Info.\n\r");
+    Print(L"UefiMain() -> AllocatePool() failed with error code: %d\n\r", Status);
+    goto ExitUefi;
+  }
+  Status = gBS->AllocatePool(EfiRuntimeServicesData, PngBufferSize, (VOID **)&fiPng);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"Allocate memory for font.bgra File Info.\n\r");
+    Print(L"UefiMain() -> AllocatePool() failed with error code: %d\n\r", Status);
+    goto ExitUefi;
+  }
+
 #ifndef _DEBUG
   Status = gBS->AllocatePool(EfiRuntimeServicesData, LogoBufferSize, (VOID **)&fiLogo);
   if (EFI_ERROR(Status))
@@ -565,7 +641,7 @@ UefiMain(
     goto ExitUefi;
   }
 
-  Status = gBS->AllocatePool(EfiRuntimeServicesData, TTYBufferSize, (VOID **)&fiTTY);
+  Status = gBS->AllocatePool(EfiRuntimeServicesData, LoadingBufferSize, (VOID **)&fiLoading);
   if (EFI_ERROR(Status))
   {
     Print(L"Allocate memory for icon/tty.icon File Info.\n\r");
@@ -595,22 +671,22 @@ UefiMain(
 
   KrnlBufferSize = fiKrnl->FileSize;
   Status = KrnlProtocol->Read(KrnlProtocol, &KrnlBufferSize, (VOID *)KrnlImageBase);
-  // if (EFI_ERROR(Status))
-  // {
-  //   Print(L"Read krnl failed with error code: %d\n\r", Status);
-  //   goto ExitUefi;
-  // }
+  if (EFI_ERROR(Status))
+  {
+    Print(L"Read krnl failed with error code: %d\n\r", Status);
+    goto ExitUefi;
+  }
 
 
   // Read ccldr image 
   CcldrProtocol->GetInfo(CcldrProtocol, &gEfiFileInfoGuid, &CcldrBufferSize, fiCcldr);
   CcldrBufferSize = fiCcldr->FileSize;  
   Status = CcldrProtocol->Read(CcldrProtocol, &CcldrBufferSize, (VOID *)CcldrBase);
-  // if (EFI_ERROR(Status))
-  // {
-  //   Print(L"Read ccldr failed with error code: %d\n\r", Status);
-  //   goto ExitUefi;
-  // }
+  if (EFI_ERROR(Status))
+  {
+    Print(L"Read ccldr failed with error code: %d\n\r", Status);
+    goto ExitUefi;
+  }
 
 
   MachineInfo->MemorySpaceInformation[0].BaseAddress = KrnlImageBase;
@@ -622,7 +698,47 @@ UefiMain(
   MachineInfo->MemorySpaceInformation[1].BaseAddress = CcldrBase;
   MachineInfo->MemorySpaceInformation[1].Size = CCLDR_SIZE;
 
+  // Read Fonts
+  FntProtocol->GetInfo(FntProtocol, &gEfiFileInfoGuid, &FntBufferSize, fiFnt);
+  FntBufferSize = fiFnt->FileSize;
+  FntBase = KrnlImageBase + ((KrnlBufferSize + EFI_PAGE_SIZE - 1) & ~(EFI_PAGE_SIZE - 1));
 
+  MachineInfo->Font.FntAddr = FntBase;
+  MachineInfo->Font.FntSize = FntBufferSize;
+
+  Status = FntProtocol->Read(FntProtocol, &FntBufferSize, (VOID*)FntBase);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"Read font/font.fnt failed with error code: %d\n\r", Status);
+    goto ExitUefi;
+  }
+
+  PngProtocol->GetInfo(PngProtocol, &gEfiFileInfoGuid, &PngBufferSize, fiPng);
+  PngBufferSize = fiPng->FileSize;
+  PngBase = FntBase + ((FntBufferSize + EFI_PAGE_SIZE - 1) & ~(EFI_PAGE_SIZE - 1));
+
+  MachineInfo->Font.PngAddr = PngBase;
+  MachineInfo->Font.PngSize = PngBufferSize;
+  MachineInfo->SizeofSumofImageFiles = PngBase + ((PngBufferSize + EFI_PAGE_SIZE - 1) & ~(EFI_PAGE_SIZE - 1)) - KRNL_BASE_ADDR;
+
+  Status = PngProtocol->Read(PngProtocol, &PngBufferSize, (VOID*)PngBase);
+  if (EFI_ERROR(Status))
+  {
+    Print(L"Read font/font.bgra failed with error code: %d\n\r", Status);
+    goto ExitUefi;
+  }
+
+  // copy font name
+  i = (CHAR8*)FntBase;
+
+  // locate at font name field
+  while (*i != '\"')
+    i++;
+  for (++i; *i != '\"' && j < MAX_FONT_NAME; i++, j++)
+  {
+    MachineInfo->Font.FontName[j] = *i;
+  }
+    
 
 
 #ifndef _DEBUG
@@ -643,37 +759,41 @@ UefiMain(
     goto ExitUefi;
   }
 
-  TTYProtocol->GetInfo(TTYProtocol, &gEfiFileInfoGuid, &TTYBufferSize, fiTTY);
-  TTYBufferSize = fiTTY->FileSize;
-  Status = gBS->AllocatePool(EfiRuntimeServicesData, TTYBufferSize, (VOID**)&TTYBase);
+  LoadingProtocol->GetInfo(LoadingProtocol, &gEfiFileInfoGuid, &LoadingBufferSize, fiLoading);
+  LoadingBufferSize = fiLoading->FileSize;
+  Status = gBS->AllocatePool(EfiRuntimeServicesData, LoadingBufferSize, (VOID**)&LoadingBase);
   if (EFI_ERROR(Status))
   {
     Print(L"Allocate memory for icon/tty.icon.\n\r");
     Print(L"UefiMain() -> AllocatePool() failed with error code: %d\n\r", Status);
     goto ExitUefi;
   }
-  Status = TTYProtocol->Read(TTYProtocol, &TTYBufferSize, (VOID*)TTYBase);
+  Status = LoadingProtocol->Read(LoadingProtocol, &LoadingBufferSize, (VOID*)LoadingBase);
   if (EFI_ERROR(Status))
   {
     Print(L"Read icon/tty.icon failed with error code: %d\n\r", Status);
     goto ExitUefi;
   }
-  DisplayLogo((EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)LogoBase, (EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)TTYBase, MachineInfo);
+  DisplayLogo((EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)LogoBase, (EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)LoadingBase, MachineInfo);
   gBS->FreePool((VOID*)LogoBase);
-  gBS->FreePool((VOID*)TTYBase);
+  gBS->FreePool((VOID*)LoadingBase);
 #endif
 
 
   // Free Memory and Close Protocol
   gBS->FreePool(fiKrnl);
   gBS->FreePool(fiCcldr);
+  gBS->FreePool(fiFnt);
+  gBS->FreePool(fiPng);
   KrnlProtocol->Close(KrnlProtocol);
   CcldrProtocol->Close(CcldrProtocol);
+  FntProtocol->Close(FntProtocol);
+  PngProtocol->Close(PngProtocol);
 
 #ifndef _DEBUG
-  gBS->FreePool(fiTTY);
+  gBS->FreePool(fiLoading);
   gBS->FreePool(fiLogo);
-  TTYProtocol->Close(TTYProtocol);
+  LoadingProtocol->Close(LoadingProtocol);
   LogoProtocol->Close(LogoProtocol);
 #endif
   RootProtocol->Close(RootProtocol);
