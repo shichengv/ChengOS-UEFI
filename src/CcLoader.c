@@ -12,12 +12,15 @@
 #define KRNL_PATH                     L"krnl"
 #define CCLDR_PATH                    L"ccldr"
 #define BG_PATH                       L"bg\\background"
+#define BG_PNG_PATH                   L"bg\\background.png"
 
 #define PRIMARY_FONT_PATH             L"font\\Caerulaarbor\\Caerulaarbor.fnt"
 #define PRIMARY_FONT_IMG_PATH         L"font\\Caerulaarbor\\Caerulaarbor_0.bgra"
+#define PRIMARY_FONT_PNG_PATH         L"font\\Caerulaarbor\\Caerulaarbor_0.png"
 
 #define SECONDARY_FONT_PATH           L"font\\CascadiaCode\\CascadiaCode.fnt"
 #define SECONDARY_FONT_IMG_PATH       L"font\\CascadiaCode\\CascadiaCode_0.bgra"
+#define SECONDARY_FONT_PNG_PATH       L"font\\CascadiaCode\\CascadiaCode_0.png"
 
 
 // Protocols
@@ -30,6 +33,11 @@ extern VOID DisplayLoadingLogo();
 
 extern VOID FindAcpiTable(IN LOADER_MACHINE_INFORMATION *MachineInfo);
 extern VOID AdjustGraphicsMode(IN LOADER_MACHINE_INFORMATION *MachineInfo);
+extern VOID GetPNGSize(
+	IN CHAR16* PngPath,
+	IN OUT UINT32* Width,
+	IN OUT UINT32* Height 
+);
 
 
 // Function to convert memory type to string
@@ -201,6 +209,9 @@ UefiMain(
   // Status
   EFI_STATUS Status;
 
+  UINT32 PNGWidth;
+  UINT32 PNGHeight;
+
   // default random number equals to skadi(73 6B 61 64 69)
   UINTN RandomNumber = 0x6964616B73;
   EFI_RNG_PROTOCOL *gRngProtocol;
@@ -283,13 +294,6 @@ UefiMain(
   
   ReadFileInit();
 
-  /* ========================= Adjust the Graphics mode ====================== */
-  AdjustGraphicsMode(MachineInfo);
-#ifndef _DEBUG
-  DisplayLoadingLogo();
-#endif
-
-
   /* ==================== Load krnl, ccldr and icons ==================== */
 
   /*  Allocate Kernel Space Address. */
@@ -322,8 +326,9 @@ UefiMain(
   FileBuffer = KrnlImageBase + MachineInfo->SumOfSizeOfFilesInBytes;
 
   ReadFileToBufferAt(BG_PATH, FileBuffer, &FileSize);
-  MachineInfo->Background.Width = 1920;
-  MachineInfo->Background.Height = 1080;
+  GetPNGSize(BG_PNG_PATH, &PNGWidth, &PNGHeight);
+  MachineInfo->Background.Width = (UINT16)PNGWidth;
+  MachineInfo->Background.Height = (UINT16)PNGHeight;
   MachineInfo->Background.Addr = (UINTN)FileBuffer;
   MachineInfo->Background.Size = (UINT32)FileSize;
 
@@ -337,9 +342,10 @@ UefiMain(
   MachineInfo->SumOfSizeOfFilesInBytes += PAGE_ALIGNED(FileSize);
   FileBuffer = KrnlImageBase + MachineInfo->SumOfSizeOfFilesInBytes;
   ReadFileToBufferAt(PRIMARY_FONT_IMG_PATH, FileBuffer, &FileSize);
+  GetPNGSize(PRIMARY_FONT_PNG_PATH, &PNGWidth, &PNGHeight);
   MachineInfo->Font[0].Img.Addr = (UINTN)FileBuffer;
-  MachineInfo->Font[0].Img.Width = 256;
-  MachineInfo->Font[0].Img.Height = 128;
+  MachineInfo->Font[0].Img.Width = (UINT16)PNGWidth;
+  MachineInfo->Font[0].Img.Height = (UINT16)PNGHeight;
   MachineInfo->Font[0].Img.Size = (UINT32)FileSize;
 
   MachineInfo->SumOfSizeOfFilesInBytes += PAGE_ALIGNED(FileSize);
@@ -351,10 +357,20 @@ UefiMain(
   MachineInfo->SumOfSizeOfFilesInBytes += PAGE_ALIGNED(FileSize);
   FileBuffer = KrnlImageBase + MachineInfo->SumOfSizeOfFilesInBytes;
   ReadFileToBufferAt(SECONDARY_FONT_IMG_PATH, FileBuffer, &FileSize);
+  GetPNGSize(SECONDARY_FONT_PNG_PATH, &PNGWidth, &PNGHeight);
   MachineInfo->Font[1].Img.Addr = (UINTN)FileBuffer;
-  MachineInfo->Font[1].Img.Width = 256;
-  MachineInfo->Font[1].Img.Height = 128;
+  MachineInfo->Font[1].Img.Width = (UINT16)PNGWidth;
+  MachineInfo->Font[1].Img.Height = (UINT16)PNGHeight;
   MachineInfo->Font[1].Img.Size = (UINT32)FileSize;
+
+
+  /* ========================= Adjust the Graphics mode ====================== */
+  AdjustGraphicsMode(MachineInfo);
+#ifndef _DEBUG
+  DisplayLoadingLogo();
+#endif
+
+
 
   ReadFileFnit();
 

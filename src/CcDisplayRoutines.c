@@ -13,10 +13,96 @@ STATIC UINT32 PixelsPerScanLine;
 
 STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL *gGraphicsOutput;
 
+
+STATIC UINT32 swap_endian(UINT32 value) {
+    return ((value & 0x000000FF) << 24) |
+           ((value & 0x0000FF00) << 8) |
+           ((value & 0x00FF0000) >> 8) |
+           ((value & 0xFF000000) >> 24);
+}
+
+
+
+
+VOID GetPNGSize(
+	IN CHAR16* PngPath,
+	IN OUT UINT32* Width,
+	IN OUT UINT32* Height 
+)
+{
+	VOID* Buffer;
+	char* FileBuffer;
+	UINTN FileSize;
+
+	UINT32 SizeOfIHDR;
+	UINT32 PNGWidth;
+	UINT32 PNGHeight;
+
+	ReadFileToBuffer(PngPath, &Buffer, &FileSize);
+	FileBuffer = (char*)Buffer;
+
+	// is support 8 bit data on transmission system?
+	if (FileBuffer[0] != ((char)0x89))
+	{
+		goto ParsingFailed;
+	}
+	// PNG signature
+	if (FileBuffer[1] != 'P' || FileBuffer[2] != 'N' || FileBuffer[3] != 'G')
+	{
+		goto ParsingFailed;
+	}
+	// CRLF in dos environment
+	if (FileBuffer[4] != ((char)0x0D) || FileBuffer[5] != ((char)0x0A))
+	{
+		goto ParsingFailed;
+	}
+	// prevent file to display EOF in dos environment
+	if (FileBuffer[6] != ((char)0x1A))
+	{
+		goto ParsingFailed;
+	}
+	// LF in unix environment 
+	if (FileBuffer[7] != ((char)0x0A))
+	{
+		goto ParsingFailed;
+	}
+	FileBuffer += 8;
+	SizeOfIHDR = *(UINT32*)(FileBuffer);
+	SizeOfIHDR = swap_endian(SizeOfIHDR);
+
+	FileBuffer += 4;
+
+	// RDHI: 0x52444849
+	if (*(UINT32*)(FileBuffer) != 0x52444849)
+	{
+		goto ParsingFailed;
+	}
+	FileBuffer += 4;
+	PNGWidth = *(UINT32*)(FileBuffer);
+	*Width = swap_endian(PNGWidth);
+
+	FileBuffer += 4;
+	PNGHeight = *(UINT32*)(FileBuffer);
+	*Height = swap_endian(PNGHeight);
+
+	FreePool(Buffer);
+	goto ParsingSuccessful;
+
+ParsingFailed:
+
+	Print(L"Png Parsing Failed!\n\r");
+	FreePool(Buffer);
+	UEFI_PANIC;
+
+ParsingSuccessful:
+
+}
+
 #ifndef _DEBUG
 #define LOADING_ICO_PATH 											L"icon\\loading.ico"
 #define LOADING_OFFSET												30
 #define LOGO_ICO_PATH 												L"icon\\logo.ico"
+
 
 EFI_STATUS DisplayImage(
 		EFI_IMAGE_OUTPUT *ImageOutput,
@@ -75,7 +161,6 @@ VOID DisplayLoadingLogo()
 	ImageOutput.Image.Bitmap = FileBuffer;
 
 	XOfUpperLeftHand = (Horizontal - ImageOutput.Width) >> 1;
-	// YOfUpperLeftHand = (Vertical >> 1) - (Vertical >> 2);
 	YOfUpperLeftHand = (Vertical >> 3);
 
 	Status = DisplayImage(&ImageOutput, XOfUpperLeftHand, YOfUpperLeftHand);
@@ -135,6 +220,7 @@ VOID AdjustGraphicsMode(IN LOADER_MACHINE_INFORMATION *MachineInfo)
 
 	gGraphicsOutput->SetMode(gGraphicsOutput, DefaultMode);
 	WpLocateProtocol(&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&gGraphicsOutput, L"GraphicsOutputProtocol");
+
 
 #ifdef _DEBUG
 	Print(L"Default Mode:%02d, Version:%x, Format:%d, Horizontal:%d, Vertical:%d, ScanLine:%d, FrameBufferBase:%018lx, FrameBufferSize:%018lx\n",
