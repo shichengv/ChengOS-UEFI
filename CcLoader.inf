@@ -23,7 +23,11 @@
 #
 
 [Sources]
-  CcLoader.c
+  src/CcLoader.c
+  src/CcReadFile.c
+  src/CcWrapper.c
+  src/CcAcpiRoutines.c
+  src/CcDisplayRoutines.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -39,11 +43,12 @@
 [Ppis]
 
 [Protocols]
+  gEfiHiiImageExProtocolGuid
+  gEfiHiiImageDecoderProtocolGuid
   gEfiRngProtocolGuid
   gEfiGraphicsOutputProtocolGuid
   gEfiSimpleFileSystemProtocolGuid
   gEfiAcpiSdtProtocolGuid
-
 [FeaturePcd]
 
 [Pcd]

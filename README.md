@@ -33,7 +33,7 @@ $ tree
 
 **加载界面预览图**
 
-![Alt text](<./img/Kali Linux Development-2024-06-16-16-14-22.png>)
+![Alt text](<./img/sample.png>)
 
 ## 构建
 
