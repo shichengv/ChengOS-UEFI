@@ -8,11 +8,11 @@
 #include "types.h"
 #include "AcpiSDT.h"
 
-#define MACHINE_INFO_STRUCT_ADDR                            0x1000
-#define MACHINE_INFO_STRUCT_SIZE                            0xF000
+// #define MACHINE_INFO_STRUCT_ADDR                            0x1000
+#define MACHINE_INFO_STRUCT_SIZE                            0x10000
 
-#define CCLDR_BASE_ADDR                                     0x100000
-#define CCLDR_SIZE                                          0x700000
+// #define CCLDR_BASE_ADDR                                     0x100000
+#define CCLDR_SIZE                                          0x800000
 
 #define KRNL_BASE_ADDR                                      0x8000000
 

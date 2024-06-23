@@ -36,7 +36,7 @@ extern VOID AdjustGraphicsMode(IN LOADER_MACHINE_INFORMATION *MachineInfo);
 extern VOID GetPNGSize(
 	IN CHAR16* PngPath,
 	IN OUT UINT32* Width,
-	IN OUT UINT32* Height 
+	IN OUT UINT32* Height
 );
 
 
@@ -220,17 +220,13 @@ UefiMain(
 
   // Current Machine Information
   LOADER_MACHINE_INFORMATION *MachineInfo;
-  // Allocate Memory for Machine Information Structure
-  EFI_PHYSICAL_ADDRESS MachineInformationAddress = MACHINE_INFO_STRUCT_ADDR;
 
-
-
-  EFI_PHYSICAL_ADDRESS KrnlImageBase = KRNL_BASE_ADDR;
+  EFI_PHYSICAL_ADDRESS KrnlImageBase;
   UINTN KernelBufferSize = 0;
   UINTN KernelSpaceSize = 0;
 
-  UINTN CcldrBufferSize = 0; // The size of ccldr must not exceed 1GByte.
-  EFI_PHYSICAL_ADDRESS CcldrBase = CCLDR_BASE_ADDR;
+  UINTN CcldrBufferSize = 0;
+  EFI_PHYSICAL_ADDRESS CcldrBase;
 
 
 
@@ -249,27 +245,17 @@ UefiMain(
   gSystemTable = SystemTable;
   SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
 
-  MachineInfo = (LOADER_MACHINE_INFORMATION *)MachineInformationAddress;
-
-  // Allocate Memory for ccldr and machine_info
-  Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, (MACHINE_INFO_STRUCT_SIZE / EFI_PAGE_SIZE), &MachineInformationAddress);
+  Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, (CCLDR_SIZE + MACHINE_INFO_STRUCT_SIZE) / EFI_PAGE_SIZE, &CcldrBase);
   if (EFI_ERROR(Status))
   {
-    Print(L"Allocate 7 pages memory for MachineInfo Structure at 0x1000\n\r");
-    Print(L"UefiMain() -> AllocatePages() failed with error code: %d \n\r", Status);
+    Print(L"[ERROR]: Allocate memory for ccldr failed...\n\r");
     goto ExitUefi;
   }
 
-  Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, (CCLDR_SIZE / EFI_PAGE_SIZE), &CcldrBase);
-  if (EFI_ERROR(Status))
-  {
-    Print(L"Allocate 7 MBytes memory for Ccldr at 0x100000\n\r");
-    Print(L"UefiMain() -> AllocatePages() failed with error code: %d \n\r", Status);
-    goto ExitUefi;
-  }
 
-  gBS->SetMem((VOID *)MachineInfo, MACHINE_INFO_STRUCT_SIZE, 0);
-
+  MachineInfo = (LOADER_MACHINE_INFORMATION *)(CcldrBase);
+  gBS->SetMem((VOID*)MachineInfo, MACHINE_INFO_STRUCT_SIZE, 0);
+  CcldrBase += MACHINE_INFO_STRUCT_SIZE;
 
 
   // Get Randomized Number
@@ -282,7 +268,14 @@ UefiMain(
   else
     MachineInfo->RandomNumber = RandomNumber;
 
+  ReadFileInit();
 
+  /* ========================= Adjust the Graphics mode ====================== */
+  AdjustGraphicsMode(MachineInfo);
+
+#ifndef _DEBUG
+  DisplayLoadingLogo();
+#endif
 
 
   /* ========================= Print Memory Map ====================== */
@@ -291,23 +284,26 @@ UefiMain(
   /* ========================= Find Acpi Configuration ====================== */
   FindAcpiTable(MachineInfo);
 
-  
-  ReadFileInit();
+
 
   /* ==================== Load krnl, ccldr and icons ==================== */
 
   /*  Allocate Kernel Space Address. */
 
+#ifdef _DEBUG
+  Print(L"Allocate Kernel Space Address.\n\r");
+#endif
+
+  gBS->SetMem((VOID*)CcldrBase, (CCLDR_SIZE - MACHINE_INFO_STRUCT_SIZE), 0);
   // Read krnl image at address 0x1000000
   // Calculate the memory size for Kernel Space Note that the RamSize is 512 MBytes aligned.
   // Kernel Space Size = RamSize was aligned / 4;
   KernelSpaceSize = (((MachineInfo->MemoryInformation.RamSize + 0x20000000 - 1) & (~0x1fffffff)) >> 2);
 
-  Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, (KernelSpaceSize / EFI_PAGE_SIZE), &KrnlImageBase);
+  Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, (KernelSpaceSize / EFI_PAGE_SIZE), &KrnlImageBase);
   if (EFI_ERROR(Status))
   {
-    Print(L"Allocate Kernel Space Address at 0x8000000.\n\r");
-    Print(L"UefiMain() -> AllocatePages() failed with error code: %d \n\r", Status);
+    Print(L"[ERROR]: Allocate memory for krnl failed...\n\r");
     goto ExitUefi;
   }
 
@@ -316,7 +312,7 @@ UefiMain(
 
   MachineInfo->MemorySpaceInformation[0].BaseAddress = KrnlImageBase;
   MachineInfo->MemorySpaceInformation[0].Size = KernelSpaceSize;
-  MachineInfo->MemorySpaceInformation[1].BaseAddress = CcldrBase;
+  MachineInfo->MemorySpaceInformation[1].BaseAddress = (UINTN)MachineInfo;
   MachineInfo->MemorySpaceInformation[1].Size = CCLDR_SIZE;
   MachineInfo->MemorySpaceInformation[2].BaseAddress = KrnlImageBase;
   MachineInfo->MemorySpaceInformation[2].Size = KernelBufferSize;
@@ -364,21 +360,19 @@ UefiMain(
   MachineInfo->Font[1].Img.Size = (UINT32)FileSize;
 
 
-  /* ========================= Adjust the Graphics mode ====================== */
-  AdjustGraphicsMode(MachineInfo);
-#ifndef _DEBUG
-  DisplayLoadingLogo();
-#endif
-
-
-
   ReadFileFnit();
+
+
+#ifdef _DEBUG
+  Print(L"Ccldr Starting...\n\r");
+#endif
 
   /* ========================== Exit Services ================================ */
   gBS->GetMemoryMap(&MemMapSize, MemMap, &MapKey, &DescriptorSize, &DesVersion);
   gBS->ExitBootServices(ImageHandle, MapKey);
 
-  void (*ccldr_start)(LOADER_MACHINE_INFORMATION *MachineInfo) = (void *)(MachineInfo->MemorySpaceInformation[1].BaseAddress);
+  void (*ccldr_start)(LOADER_MACHINE_INFORMATION *MachineInfo) = (void *)(CcldrBase);
+
   ccldr_start(MachineInfo);
 
   return EFI_SUCCESS;
