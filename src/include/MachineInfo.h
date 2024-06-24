@@ -8,13 +8,20 @@
 #include "types.h"
 #include "AcpiSDT.h"
 
-// #define MACHINE_INFO_STRUCT_ADDR                            0x1000
 #define MACHINE_INFO_STRUCT_SIZE                            0x10000
 
-// #define CCLDR_BASE_ADDR                                     0x100000
-#define CCLDR_SIZE                                          0x800000
+// Byte-Alignment
+#define MM1MB                                               0x100000
+#define MM32MB                                              0x2000000
+#define MM64MB                                              0x4000000
+#define MM128MB                                             0x8000000
+#define MM256MB                                             0x10000000
+#define MM512MB                                             0x20000000
+#define MM1GB                                               0x40000000
+#define MM4GB                                               0x100000000
+#define MM8GB                                               0x200000000
+#define MM16GB                                              0x400000000
 
-#define KRNL_BASE_ADDR                                      0x8000000
 
 #define DEFAULT_HORIZONTAL_RESOLUTION                       1920
 #define DEFAULT_VERTICAL_RESOLUTION                         1080

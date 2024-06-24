@@ -1,7 +1,7 @@
 [bits 64]
 
 kernel_space_virtual_base_addr equ 0xFFFFF00000000000
-
+magic_number equ 0x6964616B73
 ; Integer registers
 
 ; System V ABI Description:
@@ -57,25 +57,12 @@ _start:
     ; Set temporary kernel stack pointer
     ; rsp -> ccldr base + ccldr size
     mov rsp, rbp
-
-    ; ccldr can map 2GBytes maximum physical memory;
-    mov rdi, qword [r8 + 0x8]   ; get kernel space size
-    push rdi                    ; kernel space size stored at [rbp - 0x8]
-
-    ; 0x80000000 eq 2 GBytes
-    mov rsi, 0x80000000
-
-    ; if kernel space size >= 2 GBytes
-    cmp rdi, rsi
-    cmovnb rdi, rsi
-    ; so we need to update kernel space size in machine_info
-    mov qword [r8 + 0x8], rdi
-
-
+    mov rax, magic_number
+    push rax 
 
     ; Determine how to construct ccldr page table based on it's base address
     ; calculate pml4_base
-    add r9, 0x80000         ; ccldr base + 128 KBytes
+    add r9, 0x14000         ; pml4_base = ccldr_base + 0x100000 + 0x4000 
     push r9                 ; pml4_base stored at [rbp - 0x10]
 
     ; calculate ccldr number of ptes
@@ -86,7 +73,7 @@ _start:
     mov rdi, qword [r8 + 0x18]
     mov rsi, qword [r8 + 0x10]
     mov rdx, rsp
-    call func_calculate_num_of_ptes;
+    call func_calculate_num_of_ptes_with_base_addr;
 
     ; calculate krnl number of ptes
     push 0                  ; number of ptes of krnl at [rbp - 0x38]
@@ -94,8 +81,7 @@ _start:
     push 0                  ; number of pdptes of krnl at [rbp - 0x48]
     push 0                  ; number of pml4es of krnl at [rbp - 0x50]
     mov rdi, qword [r8 + 0x8]
-    mov rsi, qword [r8]
-    mov rdx, rsp
+    mov rsi, rsp
     call func_calculate_num_of_ptes;
 
     ; calculate ccldr_pdpt_base
@@ -251,8 +237,6 @@ _start:
     or eax, 0x0101
     wrmsr
 
-    mov rdi, qword[rbp - 8]
-    mov qword [r8 + 0x8], rdi
     mov rdi, r8
     
     mov rsi, kernel_space_virtual_base_addr + 0x1000
@@ -281,15 +265,17 @@ func_fill_pte:
     xor rax, rax   
     ret
 
-; Routine Description: 
+
+
+
+; Routine Description:
 
 ;   The routine calculates the number of pdptes, the number of
 ; pdes and the number of ptes with specified byte size respectively.
 
 ; Parameters:
-;   rdi 2st parameter: byte size
-;   rsi 1st parameter: base addr
-;   rdx 3st parameter: uint64_t addr[4]
+;   rdi 1st parameter: byte size
+;   rsi 2st parameter: uint64_t addr[4]
 ;       addr[0]: number of pml4es
 ;       addr[1]: number of pdptes
 ;       addr[2]: number of pdes
@@ -299,6 +285,81 @@ func_fill_pte:
 ;   None.
 
 func_calculate_num_of_ptes:
+    push rbx
+    push r8
+    push rbp
+    mov rbp, rsp
+
+    mov rbx, rdi    ; backup size
+
+    mov rax, rdi
+    shr rdi, 39
+    mov rdx, 0x7FFFFFFFFF
+    and rax, rdx
+    cmp rax, 0
+    je LPML4
+    inc rdi
+LPML4:
+    mov qword[rsi], rdi
+
+    mov rdi, rbx
+    mov rax, rdi
+    shr rdi, 30
+    and rax, 0x3fffffff
+    cmp rax, 0
+    je LPDPT
+    inc rdi
+LPDPT:
+    mov qword[rsi+0x8], rdi
+
+    mov rdi, rbx
+    mov rax, rdi
+    shr rdi, 21
+    and rax, 0x1FFFFF
+    cmp rax, 0
+    je LPD
+    inc rdi
+LPD:
+    mov qword[rsi+0x10], rdi
+
+    mov rdi, rbx
+    mov rax, rdi
+    shr rdi, 12
+    and rax, 0xFFF
+    cmp rax, 0
+    je LPT
+    inc rdi
+LPT:
+    mov qword[rsi+0x18], rdi
+
+    mov rsp, rbp
+    pop rbp
+    pop r8
+    pop rbx
+    ret
+
+
+
+
+
+; Routine Description: 
+
+;   The routine calculates the number of pdptes, the number of
+; pdes and the number of ptes with specified byte size and base addr respectively.
+
+; Parameters:
+;   rdi 1st parameter: byte size
+;   rsi 2st parameter: base addr
+;   rdx 3st parameter: uint64_t addr[4]
+;       addr[0]: number of pml4es
+;       addr[1]: number of pdptes
+;       addr[2]: number of pdes
+;       addr[3]: number of ptes
+
+; Returned Value:
+;   None.
+
+func_calculate_num_of_ptes_with_base_addr:
     push rbx
     push r8
     push rbp

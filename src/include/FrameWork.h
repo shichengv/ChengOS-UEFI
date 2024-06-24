@@ -24,6 +24,6 @@
 
 #define UEFI_PANIC                          while(1)
 
-// #define _DEBUG                                              0x10100101
+// #define _DEBUG                              0x6964616B73 // Debug Magic Number
 
 #endif
