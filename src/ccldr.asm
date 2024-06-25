@@ -1,5 +1,6 @@
 [bits 64]
 
+kernel_pml4_offset equ 0x1E0
 kernel_space_virtual_base_addr equ 0xFFFFF00000000000
 magic_number equ 0x6964616B73
 
@@ -75,11 +76,11 @@ start:
     ; rsp -> ccldr base + ccldr size
     mov rsp, rbp
     mov rax, magic_number
-    push rax 
+    push rax
 
     ; Determine how to construct ccldr page table based on it's base address
     ; calculate pml4_base
-    add r9, 0x18000         ; pml4_base = ccldr_base + 0x100000 + 0x4000 
+    add r9, 0x18000         ; pml4_base = ccldr_base + 0x100000 + 0x4000
     push r9                 ; pml4_base stored at [rbp - 0x10]
 
     ; calculate ccldr number of ptes
@@ -102,7 +103,7 @@ start:
     call func_calculate_num_of_ptes;
 
     ; calculate ccldr_pdpt_base
-    mov rdx, qword[rbp - 0x10] ; get pml4_base   
+    mov rdx, qword[rbp - 0x10] ; get pml4_base
     add rdx, 0x1000             ; ccldr_pdpt_base = pml4_base + 0x1000
     push rdx                ; ccldr_pdpt_base at [rbp - 0x58]
 
@@ -131,7 +132,7 @@ start:
     push rdx                ; ccldr_pt_base at [rbp - 0x78]
 
     ; calculate krnl_pt_base
-    mov rcx, qword [rbp - 0x20] ; get num_of_pdes_of_ccldr 
+    mov rcx, qword [rbp - 0x20] ; get num_of_pdes_of_ccldr
     shl rcx, 12
     add rdx, rcx
     push rdx                ; krnl_pt_base at [rbp - 0x80]
@@ -157,10 +158,10 @@ start:
 
 
     ; for krnl
-    mov rdi, 0x1E0          ; PML4[0x1E0 * 0x8] -> krnl_pdpt_base
-    shl rdi, 3              
+    mov rdi, kernel_pml4_offset          ; PML4[kernel_pml4_offset * 0x8] -> krnl_pdpt_base
+    shl rdi, 3
     mov rbx, qword [rbp - 0x10]
-    add rdi, rbx             ; rdi: pml4_base + (0x1E0 * 0x8) 
+    add rdi, rbx             ; rdi: pml4_base + (kernel_pml4_offset * 0x8)
 
     mov rsi, qword [rbp - 0x60] ; rsi: krnl_pdpt_base
 
@@ -190,7 +191,7 @@ start:
     mov rdi, qword [rbp - 0x60]     ; rdi: krnl_pdpt_base
     mov rsi, qword [rbp - 0x70]     ; rsi: krnl_pd_base
     mov rcx, qword [rbp - 0x48]     ; rcx: number of pdptes of krnl
-    call func_fill_pte  
+    call func_fill_pte
 
     ; Set PD
 
@@ -249,11 +250,14 @@ start:
     mov rbx, rax
     mov cr3, rax
 
-    ; enable IA-32e long mode, no matter
+    ; enable IA-32e long mode
+    ; We are in 64-bit when UEFI transfers CPU control to ccldr.
+    ; So we don't need to enable manually.
     ; mov ecx, 0xc0000080
     ; rdmsr
     ; or eax, 0x0101
     ; wrmsr
+
     cli
     mov rdi, r8
 
@@ -265,10 +269,11 @@ start:
     ; locate gdtr::base
     add r9, 0x22
     ; set gdtr::base
-    mov qword[r9],r8 
+    mov qword[r9],r8
     ; set gdtr
     sub r9, 2
     lgdt[r9]
+
 
     ; Set up segment registers
     mov ax, seg_selector_data  ; Data segment selector
@@ -278,40 +283,37 @@ start:
     mov gs, ax
     mov ss, ax
 
+    mov cr3, rbx
 
     ; Far return to reload CS
     push seg_selector_code  ; Code segment selector
-    lea rax, [rel next]
+    mov rax, 0xfffff00000001000
     push rax
+    ; goto kernel
     retfq
 
-next:
 
-    ; call krnl_start
-    mov rsi, kernel_space_virtual_base_addr + 0x1000
-    call rsi
-    
     hlt
 
 
-; Routine Description: 
+; Routine Description:
 ;   Fill Page table entry
 ; Parameters:
 ;   rdi 1st parameter: pte address
 ;   rsi 2st parameter: pt_base
 ;   rcx 3st parameter: number of entrys
 ; Returned Value:
-;   returned 0 
+;   returned 0
 func_fill_pte:
 
     fill_pte:
-        mov rax, rsi 
+        mov rax, rsi
         or rax, 3
         mov [rdi], rax
         add rsi, 0x1000
         add rdi, 0x8
         loop fill_pte
-    xor rax, rax   
+    xor rax, rax
     ret
 
 
@@ -391,7 +393,7 @@ LPT:
 
 
 
-; Routine Description: 
+; Routine Description:
 
 ;   The routine calculates the number of pdptes, the number of
 ; pdes and the number of ptes with specified byte size and base addr respectively.
@@ -413,7 +415,7 @@ func_calculate_num_of_ptes_with_base_addr:
     push r8
     push rbp
     mov rbp, rsp
-    
+
     mov rcx, rsi    ; rcx backup base
     mov rbx, rdi    ; rbx backup size
 
@@ -535,7 +537,7 @@ gdt_krnl_code:
     ;   DPL: 00
     ;   S: 1 (represent code or data)
     ;   Type: Execute/Read(1010)
-    db 0b_1_00_1_1_0_1_0 
+    db 0b_1_00_1_1_0_1_0
     ; G: 1 (when flag is set, the segment limit is interpreted in 4-KByte units.)
     ; D/B: (The flag should always be set to 1 for 32-bit code and data segments)
     ; L: 1 (64-bit code segment)
@@ -552,7 +554,7 @@ gdt_krnl_data:
     ;   DPL: 00
     ;   S: 1 (represent code or data)
     ;   Type: Read/Write(0010)
-    db 0b_1_00_1_0_0_1_0 
+    db 0b_1_00_1_0_0_1_0
 
     ; G: 1 (when flag is set, the segment limit is interpreted in 4-KByte units.)
     ; D/B: (The flag should always be set to 1 for 32-bit code and data segments)
@@ -566,6 +568,6 @@ gdt_end:
     dq 00
 
 gdt_descriptor:
-    ;  the GDT limit should always be one less than an integral multiple of eight (that is, 8N – 1).
+    ;  the GDT limit should always be one less than an integral multiple of eight (that is, 8N � 1).
     dw ((gdt_end - gdt_start) - 1)
     dq 00

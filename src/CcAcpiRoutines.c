@@ -56,8 +56,16 @@ VOID FindAcpiTable(IN LOADER_MACHINE_INFORMATION *MachineInfo)
     MachineInfo->AcpiInformation.DSDT = (struct _DSDT *)MachineInfo->AcpiInformation.FADT->X_Dsdt;
   }
 
+#ifdef _DEBUG
+    Print(L"%c",MachineInfo->AcpiInformation.DSDT->Header.Signature[0]);
+    Print(L"%c",MachineInfo->AcpiInformation.DSDT->Header.Signature[1]);
+    Print(L"%c",MachineInfo->AcpiInformation.DSDT->Header.Signature[2]);
+    Print(L"%c",MachineInfo->AcpiInformation.DSDT->Header.Signature[3]);
+    Print(L" Table found!\n\r");
+#endif
+
   WpLocateProtocol(&gEfiAcpiSdtProtocolGuid, NULL, (VOID**)&gAcpiSdt, L"AcpiStdProtocol");
-  
+
   /*  Acpi Configuration  */
   for (UINT32 i = 0; MaskSet != ALL_HAVE_BEEN_FOUND; i++)
   {

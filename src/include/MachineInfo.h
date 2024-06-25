@@ -12,6 +12,7 @@
 
 // Byte-Alignment
 #define MM1MB                                               0x100000
+#define MM16MB                                              0x1000000
 #define MM32MB                                              0x2000000
 #define MM64MB                                              0x4000000
 #define MM128MB                                             0x8000000

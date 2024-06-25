@@ -319,6 +319,7 @@ UefiMain(
   else if (KernelSpaceSize <= MM2GB)
     KernelSpaceSize = (KernelSpaceSize + MM2GB - 1) & ~(MM2GB - 1);
   else if (KernelSpaceSize > MM2GB)
+    // Kernel use 2GB at most.
     KernelSpaceSize = MM2GB;
 
   Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, (KernelSpaceSize >> EFI_PAGE_SHIFT), &KrnlImageBase);
@@ -327,14 +328,12 @@ UefiMain(
     Print(L"[ERROR]: Kernel Space Size: %x, Allocate memory for krnl failed...\n\r", KernelSpaceSize);
     goto ExitUefi;
   }
+  gBS->SetMem((VOID*)KrnlImageBase, KernelSpaceSize, 0);
 
-  // calculate memory needed for ccldr, it must be had enough memory space to map kernel space.
-  CcldrSpaceSize = ((KernelSpaceSize >> EFI_PAGE_SHIFT) << 3) + MM1MB;
+  // Ccldr request 16MB memory for mapping kernel space.
+  CcldrSpaceSize = MM16MB;
 
-  // CcldrBase = 0x1000000;
-  // Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, CcldrSpaceSize >> EFI_PAGE_SHIFT, &CcldrBase);
-  Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, CcldrSpaceSize >> EFI_PAGE_SHIFT, &CcldrBase);
-  if (EFI_ERROR(Status))
+  Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, CcldrSpaceSize >> EFI_PAGE_SHIFT, &CcldrBase); if (EFI_ERROR(Status))
   {
     Print(L"[ERROR]: Allocate memory for ccldr failed...\n\r");
     goto ExitUefi;
