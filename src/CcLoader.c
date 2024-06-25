@@ -316,17 +316,10 @@ UefiMain(
     KernelSpaceSize = (KernelSpaceSize + MM512MB - 1) & ~(MM512MB - 1);
   else if (KernelSpaceSize <= MM1GB)
     KernelSpaceSize = (KernelSpaceSize + MM1GB - 1) & ~(MM1GB - 1);
-  else if (KernelSpaceSize <= MM4GB)
-    KernelSpaceSize = (KernelSpaceSize + MM4GB - 1) & ~(MM4GB - 1);
-  else if (KernelSpaceSize <= MM8GB)
-    KernelSpaceSize = (KernelSpaceSize + MM8GB - 1) & ~(MM8GB - 1);
-  else if (KernelSpaceSize <= MM16GB)
-    KernelSpaceSize = (KernelSpaceSize + MM16GB - 1) & ~(MM16GB - 1);
-  else
-  {
-    Print(L"Your computer's performance is so powerful!\n\rThe kernel dare not run on your computer.\n\r");
-    goto ExitUefi;
-  }
+  else if (KernelSpaceSize <= MM2GB)
+    KernelSpaceSize = (KernelSpaceSize + MM2GB - 1) & ~(MM2GB - 1);
+  else if (KernelSpaceSize > MM2GB)
+    KernelSpaceSize = MM2GB;
 
   Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, (KernelSpaceSize >> EFI_PAGE_SHIFT), &KrnlImageBase);
   if (EFI_ERROR(Status))
@@ -338,6 +331,8 @@ UefiMain(
   // calculate memory needed for ccldr, it must be had enough memory space to map kernel space.
   CcldrSpaceSize = ((KernelSpaceSize >> EFI_PAGE_SHIFT) << 3) + MM1MB;
 
+  // CcldrBase = 0x1000000;
+  // Status = gBS->AllocatePages(AllocateAddress, EfiLoaderData, CcldrSpaceSize >> EFI_PAGE_SHIFT, &CcldrBase);
   Status = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, CcldrSpaceSize >> EFI_PAGE_SHIFT, &CcldrBase);
   if (EFI_ERROR(Status))
   {
@@ -357,7 +352,7 @@ UefiMain(
     Print(L"[ERROR]: Free Machine Information Structure failed with error code: %d\n\r", Status);
     goto ExitUefi;
   }
-  
+
 
 
   ReadFileToBufferAt(KRNL_PATH, KrnlImageBase, &KernelBufferSize);

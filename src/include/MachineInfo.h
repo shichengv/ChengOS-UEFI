@@ -18,6 +18,7 @@
 #define MM256MB                                             0x10000000
 #define MM512MB                                             0x20000000
 #define MM1GB                                               0x40000000
+#define MM2GB                                               0x80000000
 #define MM4GB                                               0x100000000
 #define MM8GB                                               0x200000000
 #define MM16GB                                              0x400000000

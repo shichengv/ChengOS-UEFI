@@ -2,6 +2,10 @@
 
 kernel_space_virtual_base_addr equ 0xFFFFF00000000000
 magic_number equ 0x6964616B73
+
+seg_selector_code equ (1 << 3)
+seg_selector_data equ (2 << 3)
+
 ; Integer registers
 
 ; System V ABI Description:
@@ -28,9 +32,22 @@ magic_number equ 0x6964616B73
 ;   r14
 ;   r15
 
+
 section .text
-    global _start
-_start:
+global start
+
+start:
+
+    nop
+    nop
+    nop
+    nop
+
+    mov ax, ss
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov ax, ss
 
     ; Zero general-purpose registers
     xor rax, rax
@@ -62,7 +79,7 @@ _start:
 
     ; Determine how to construct ccldr page table based on it's base address
     ; calculate pml4_base
-    add r9, 0x14000         ; pml4_base = ccldr_base + 0x100000 + 0x4000 
+    add r9, 0x18000         ; pml4_base = ccldr_base + 0x100000 + 0x4000 
     push r9                 ; pml4_base stored at [rbp - 0x10]
 
     ; calculate ccldr number of ptes
@@ -229,16 +246,48 @@ _start:
     and rcx, 0xfff
     mov rax, qword[rbp - 0x10]
     or rax, rcx
+    mov rbx, rax
     mov cr3, rax
 
     ; enable IA-32e long mode, no matter
-    mov ecx, 0xc0000080
-    rdmsr
-    or eax, 0x0101
-    wrmsr
-
+    ; mov ecx, 0xc0000080
+    ; rdmsr
+    ; or eax, 0x0101
+    ; wrmsr
+    cli
     mov rdi, r8
-    
+
+    ; get ccldr_base
+    mov r8, qword[rdi+0x10]
+    ; locate gdt base addr
+    add r8, 0x11000
+    mov r9, r8
+    ; locate gdtr::base
+    add r9, 0x22
+    ; set gdtr::base
+    mov qword[r9],r8 
+    ; set gdtr
+    sub r9, 2
+    lgdt[r9]
+
+    ; Set up segment registers
+    mov ax, seg_selector_data  ; Data segment selector
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+
+    ; Far return to reload CS
+    push seg_selector_code  ; Code segment selector
+    lea rax, [rel next]
+    push rax
+    retfq
+
+next:
+
+    ; call krnl_start
     mov rsi, kernel_space_virtual_base_addr + 0x1000
     call rsi
     
@@ -468,3 +517,55 @@ done_for_num_of_pdes:
     pop r8
     pop rbx
     ret
+
+; fill rest of data page with 0
+times 0x1000 - ($ - $$) db 0
+
+
+
+section .data
+gdt_start:
+    dq 0
+gdt_krnl_code:
+    dw 0xFFFF               ; segment limit 15:00
+    dw 0x0                  ; base address 15:00
+    db 0                    ; base 23:16
+
+    ;   Present: 1
+    ;   DPL: 00
+    ;   S: 1 (represent code or data)
+    ;   Type: Execute/Read(1010)
+    db 0b_1_00_1_1_0_1_0 
+    ; G: 1 (when flag is set, the segment limit is interpreted in 4-KByte units.)
+    ; D/B: (The flag should always be set to 1 for 32-bit code and data segments)
+    ; L: 1 (64-bit code segment)
+    ; AVL: 0 (available for use by system software)
+    ; SegLimit 19:16: 0xF
+    db 0b_1_0_1_0_0000 | (0xF)
+    db 0                    ; base 31:24
+gdt_krnl_data:
+    dw 0xFFFF               ; segment limit 15:00
+    dw 0x0                  ; base address 15:00
+    db 0                    ; base 23:16
+
+    ;   Present: 1
+    ;   DPL: 00
+    ;   S: 1 (represent code or data)
+    ;   Type: Read/Write(0010)
+    db 0b_1_00_1_0_0_1_0 
+
+    ; G: 1 (when flag is set, the segment limit is interpreted in 4-KByte units.)
+    ; D/B: (The flag should always be set to 1 for 32-bit code and data segments)
+    ; L: 1 (64-bit code segment)
+    ; AVL: 0 (available for use by system software)
+    ; SegLimit 19:16: 0xF
+    db 0b_1_0_1_0_0000 | (0xF)
+    db 0                    ; base 31:24
+
+gdt_end:
+    dq 00
+
+gdt_descriptor:
+    ;  the GDT limit should always be one less than an integral multiple of eight (that is, 8N – 1).
+    dw ((gdt_end - gdt_start) - 1)
+    dq 00
